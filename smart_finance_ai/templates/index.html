@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Home — Smart Finance AI{% endblock %}
+
+{% block content %}
+<div class="hero-section">
+  <div class="hero-eyebrow mono-text">AI-POWERED PERSONAL FINANCE</div>
+  <h1 class="hero-title">Know where your<br><span class="accent">money goes.</span></h1>
+  <p class="hero-sub">
+    Upload your bank statement CSV and let Smart Finance AI categorise,
+    analyse, and forecast your spending — no spreadsheets required.
+  </p>
+  <div class="hero-cta-group">
+    <a href="/upload" class="btn-primary-custom">
+      <i class="bi bi-cloud-upload me-2"></i>Upload Transactions
+    </a>
+    <a href="/dashboard" class="btn-ghost-custom">
+      <i class="bi bi-bar-chart-line me-2"></i>View Dashboard
+    </a>
+  </div>
+</div>
+
+<!-- Feature cards -->
+<div class="features-grid mt-5">
+  <div class="feat-card">
+    <div class="feat-icon">🗂️</div>
+    <h3>Auto Categorisation</h3>
+    <p>Keyword-based engine instantly sorts transactions into Food, Transport, Shopping, and more.</p>
+  </div>
+  <div class="feat-card">
+    <div class="feat-icon">📊</div>
+    <h3>Visual Analytics</h3>
+    <p>Bar charts and pie breakdowns reveal spending patterns at a glance.</p>
+  </div>
+  <div class="feat-card">
+    <div class="feat-icon">🔮</div>
+    <h3>Next-Month Prediction</h3>
+    <p>Linear Regression forecasts your upcoming month's total spend based on historical trends.</p>
+  </div>
+  <div class="feat-card">
+    <div class="feat-icon">💡</div>
+    <h3>Smart Recommendations</h3>
+    <p>Rule-based tips flag overspending categories and suggest actionable savings strategies.</p>
+  </div>
+</div>
+
+<!-- Quick stats strip -->
+<div class="stats-strip mt-5" id="quickStats" style="display:none">
+  <div class="stat-item">
+    <span class="stat-val" id="qs-total">—</span>
+    <span class="stat-label">Total Spent</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-val" id="qs-cats">—</span>
+    <span class="stat-label">Categories</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-val" id="qs-pred">—</span>
+    <span class="stat-label">Predicted Next Month</span>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Fetch a quick summary to show on home if data exists
+  fetch('/api/dashboard')
+    .then(r => r.json())
+    .then(d => {
+      if (d.total_spending > 0) {
+        document.getElementById('qs-total').textContent = '₹' + d.total_spending.toLocaleString();
+        document.getElementById('qs-cats').textContent = Object.keys(d.category_breakdown).length;
+        document.getElementById('qs-pred').textContent = d.prediction ? '₹' + d.prediction.toLocaleString() : 'N/A';
+        document.getElementById('quickStats').style.display = 'flex';
+      }
+    }).catch(() => {});
+</script>
+{% endblock %}

@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Smart Finance AI{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-start flex-wrap gap-2">
+  <div>
+    <h2 class="page-title">Dashboard</h2>
+    <p class="page-sub">Your financial overview at a glance.</p>
+  </div>
+  <button class="btn-ghost-custom" id="refreshBtn">
+    <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+  </button>
+</div>
+
+<!-- KPI strip -->
+<div class="kpi-strip" id="kpiStrip">
+  <div class="kpi-card">
+    <span class="kpi-label">Total Spent</span>
+    <span class="kpi-val" id="kpi-total">—</span>
+  </div>
+  <div class="kpi-card">
+    <span class="kpi-label">Categories</span>
+    <span class="kpi-val" id="kpi-cats">—</span>
+  </div>
+  <div class="kpi-card">
+    <span class="kpi-label">Top Category</span>
+    <span class="kpi-val" id="kpi-top">—</span>
+  </div>
+  <div class="kpi-card highlight-kpi">
+    <span class="kpi-label">Predicted Next Month</span>
+    <span class="kpi-val" id="kpi-pred">—</span>
+  </div>
+</div>
+
+<!-- Charts row -->
+<div class="charts-grid mt-4">
+  <div class="card-dark">
+    <div class="card-dark-header"><i class="bi bi-pie-chart me-2"></i>Spending by Category</div>
+    <div class="card-dark-body chart-body">
+      <canvas id="pieChart"></canvas>
+    </div>
+  </div>
+  <div class="card-dark">
+    <div class="card-dark-header"><i class="bi bi-bar-chart me-2"></i>Monthly Spending Trend</div>
+    <div class="card-dark-body chart-body">
+      <canvas id="barChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Category table + Recommendations -->
+<div class="lower-grid mt-4">
+
+  <div class="card-dark">
+    <div class="card-dark-header"><i class="bi bi-table me-2"></i>Category Breakdown</div>
+    <div class="card-dark-body p-0">
+      <table class="fin-table">
+        <thead><tr><th>Category</th><th>Amount</th><th>Share</th></tr></thead>
+        <tbody id="catTable"><tr><td colspan="3" class="empty-row">No data.</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card-dark">
+    <div class="card-dark-header"><i class="bi bi-lightbulb me-2"></i>AI Recommendations</div>
+    <div class="card-dark-body" id="recBox">
+      <p class="hint-text">Load data to see recommendations.</p>
+    </div>
+  </div>
+
+</div>
+
+<!-- No data notice -->
+<div id="noDataNotice" class="no-data-notice" style="display:none">
+  <i class="bi bi-inbox display-4 d-block mb-3"></i>
+  <p>No transactions found. <a href="/upload">Upload your data</a> to see insights.</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PALETTE = [
+  '#F7C59F','#5BC8AF','#6C8EBF','#E07B54',
+  '#A3C4BC','#E8B4B8','#9BC4E2','#7EC8A4',
+  '#F4A261','#C77DFF'
+];
+
+let pieChart, barChart;
+
+async function loadDashboard() {
+  const res  = await fetch('/api/dashboard');
+  const data = await res.json();
+
+  const hasData = data.total_spending > 0;
+  document.getElementById('noDataNotice').style.display = hasData ? 'none' : 'block';
+
+  // KPIs
+  document.getElementById('kpi-total').textContent = '₹' + (data.total_spending||0).toLocaleString();
+  const cats = Object.keys(data.category_breakdown || {});
+  document.getElementById('kpi-cats').textContent  = cats.length || '—';
+  document.getElementById('kpi-top').textContent   = cats[0] || '—';
+  document.getElementById('kpi-pred').textContent  = data.prediction ? '₹' + data.prediction.toLocaleString() : 'N/A';
+
+  // Pie chart
+  const catLabels = Object.keys(data.category_breakdown);
+  const catValues = Object.values(data.category_breakdown);
+
+  if (pieChart) pieChart.destroy();
+  pieChart = new Chart(document.getElementById('pieChart'), {
+    type: 'doughnut',
+    data: {
+      labels: catLabels,
+      datasets: [{ data: catValues, backgroundColor: PALETTE, borderWidth: 2, borderColor: '#0f1117' }]
+    },
+    options: {
+      plugins: { legend: { labels: { color: '#c9cdd4', font: { family: 'DM Sans', size: 12 } } } },
+      cutout: '60%'
+    }
+  });
+
+  // Bar chart (monthly)
+  const months = Object.keys(data.monthly_trend);
+  const amounts= Object.values(data.monthly_trend);
+  if (barChart) barChart.destroy();
+  barChart = new Chart(document.getElementById('barChart'), {
+    type: 'bar',
+    data: {
+      labels: months,
+      datasets: [{
+        label: 'Spending (₹)',
+        data: amounts,
+        backgroundColor: '#5BC8AF99',
+        borderColor: '#5BC8AF',
+        borderWidth: 2,
+        borderRadius: 6,
+      }]
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#7d8590' }, grid: { color: '#1e2230' } },
+        y: { ticks: { color: '#7d8590', callback: v => '₹'+v }, grid: { color: '#1e2230' } }
+      }
+    }
+  });
+
+  // Category table
+  const total = data.total_spending || 1;
+  const tbody = document.getElementById('catTable');
+  if (!catLabels.length) {
+    tbody.innerHTML = '<tr><td colspan="3" class="empty-row">No data.</td></tr>';
+  } else {
+    tbody.innerHTML = catLabels.map((cat, i) => {
+      const pct = ((catValues[i] / total) * 100).toFixed(1);
+      return `<tr>
+        <td><span class="cat-dot" style="background:${PALETTE[i % PALETTE.length]}"></span>${cat}</td>
+        <td class="amount-cell">₹${catValues[i].toLocaleString()}</td>
+        <td>
+          <div class="pct-bar-wrap">
+            <div class="pct-bar" style="width:${pct}%;background:${PALETTE[i % PALETTE.length]}"></div>
+            <span>${pct}%</span>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Recommendations
+  const recBox = document.getElementById('recBox');
+  const recs = data.recommendations || [];
+  recBox.innerHTML = recs.length
+    ? recs.map(r => `<div class="rec-item">${r}</div>`).join('')
+    : '<p class="hint-text">No recommendations — keep it up!</p>';
+}
+
+document.getElementById('refreshBtn').addEventListener('click', loadDashboard);
+loadDashboard();
+</script>
+{% endblock %}

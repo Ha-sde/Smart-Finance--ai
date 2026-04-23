@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block title %}Upload — Smart Finance AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2 class="page-title">Import Transactions</h2>
+  <p class="page-sub">Upload a CSV file or add cash entries manually.</p>
+</div>
+
+<div class="upload-grid">
+
+  <!-- ── CSV Upload ── -->
+  <div class="card-dark">
+    <div class="card-dark-header">
+      <i class="bi bi-file-earmark-spreadsheet me-2"></i>CSV Upload
+    </div>
+    <div class="card-dark-body">
+      <p class="hint-text">Required columns: <code>date</code>, <code>description</code>, <code>amount</code></p>
+
+      <div class="drop-zone" id="dropZone">
+        <i class="bi bi-cloud-upload drop-icon"></i>
+        <p>Drag &amp; drop your CSV here</p>
+        <p class="hint-text">or</p>
+        <label class="btn-primary-custom btn-sm-custom" for="csvFile">Browse file</label>
+        <input type="file" id="csvFile" accept=".csv" style="display:none">
+        <p class="filename-display mt-2" id="fileName"></p>
+      </div>
+
+      <button class="btn-primary-custom mt-3 w-100" id="uploadBtn" disabled>
+        <i class="bi bi-upload me-2"></i>Upload &amp; Import
+      </button>
+
+      <div id="uploadResult" class="result-box mt-3" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- ── Manual Entry ── -->
+  <div class="card-dark">
+    <div class="card-dark-header">
+      <i class="bi bi-pencil-square me-2"></i>Manual Entry
+    </div>
+    <div class="card-dark-body">
+      <div class="form-group-custom">
+        <label class="form-label-custom">Date</label>
+        <input type="date" class="input-custom" id="m-date" required>
+      </div>
+      <div class="form-group-custom">
+        <label class="form-label-custom">Description</label>
+        <input type="text" class="input-custom" id="m-desc" placeholder="e.g. Zomato dinner" required>
+      </div>
+      <div class="form-group-custom">
+        <label class="form-label-custom">Amount (₹)</label>
+        <input type="number" class="input-custom" id="m-amount" placeholder="e.g. 450" step="0.01" required>
+      </div>
+      <div class="form-group-custom">
+        <label class="form-label-custom">Category <span class="hint-text">(optional — auto-detected)</span></label>
+        <select class="input-custom" id="m-category">
+          <option value="">Auto-detect</option>
+          <option>Food &amp; Dining</option>
+          <option>Transport</option>
+          <option>Shopping</option>
+          <option>Entertainment</option>
+          <option>Health &amp; Medical</option>
+          <option>Utilities &amp; Bills</option>
+          <option>Education</option>
+          <option>Personal Care</option>
+          <option>Others</option>
+        </select>
+      </div>
+      <button class="btn-primary-custom mt-2 w-100" id="manualBtn">
+        <i class="bi bi-plus-circle me-2"></i>Add Transaction
+      </button>
+      <div id="manualResult" class="result-box mt-3" style="display:none"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Recent transactions table -->
+<div class="card-dark mt-4">
+  <div class="card-dark-header d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-table me-2"></i>Recent Transactions</span>
+    <button class="btn-ghost-sm" id="clearBtn"><i class="bi bi-trash me-1"></i>Clear All</button>
+  </div>
+  <div class="card-dark-body p-0">
+    <div class="table-wrapper">
+      <table class="fin-table">
+        <thead>
+          <tr><th>#</th><th>Date</th><th>Description</th><th>Category</th><th>Amount</th></tr>
+        </thead>
+        <tbody id="txTable"><tr><td colspan="5" class="empty-row">No transactions yet.</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const dropZone = document.getElementById('dropZone');
+  const csvFile  = document.getElementById('csvFile');
+  const fileName = document.getElementById('fileName');
+  const uploadBtn= document.getElementById('uploadBtn');
+
+  csvFile.addEventListener('change', () => {
+    if (csvFile.files[0]) {
+      fileName.textContent = csvFile.files[0].name;
+      uploadBtn.disabled = false;
+    }
+  });
+
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file && file.name.endsWith('.csv')) {
+      csvFile.files = e.dataTransfer.files;  // not always supported
+      fileName.textContent = file.name;
+      uploadBtn.disabled = false;
+    }
+  });
+
+  uploadBtn.addEventListener('click', async () => {
+    const file = csvFile.files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    uploadBtn.textContent = 'Uploading…';
+    uploadBtn.disabled = true;
+    try {
+      const res = await fetch('/api/upload', { method: 'POST', body: fd });
+      const data = await res.json();
+      showResult('uploadResult', res.ok, data.message || data.error);
+      if (res.ok) loadTransactions();
+    } catch(e) { showResult('uploadResult', false, 'Network error.'); }
+    uploadBtn.innerHTML = '<i class="bi bi-upload me-2"></i>Upload & Import';
+    uploadBtn.disabled = false;
+  });
+
+  document.getElementById('manualBtn').addEventListener('click', async () => {
+    const payload = {
+      date: document.getElementById('m-date').value,
+      description: document.getElementById('m-desc').value,
+      amount: document.getElementById('m-amount').value,
+      category: document.getElementById('m-category').value,
+    };
+    if (!payload.date || !payload.description || !payload.amount) {
+      showResult('manualResult', false, 'Please fill in date, description, and amount.'); return;
+    }
+    try {
+      const res = await fetch('/api/transactions', {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      showResult('manualResult', res.ok, data.message || data.error);
+      if (res.ok) { loadTransactions(); clearManualForm(); }
+    } catch(e) { showResult('manualResult', false, 'Network error.'); }
+  });
+
+  document.getElementById('clearBtn').addEventListener('click', async () => {
+    if (!confirm('Delete ALL transactions?')) return;
+    await fetch('/api/transactions/clear', { method: 'DELETE' });
+    loadTransactions();
+  });
+
+  function clearManualForm() {
+    ['m-date','m-desc','m-amount'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('m-category').selectedIndex = 0;
+  }
+
+  function showResult(id, ok, msg) {
+    const el = document.getElementById(id);
+    el.style.display = 'block';
+    el.className = 'result-box mt-3 ' + (ok ? 'result-ok' : 'result-err');
+    el.textContent = msg;
+  }
+
+  async function loadTransactions() {
+    const res  = await fetch('/api/transactions');
+    const data = await res.json();
+    const tbody= document.getElementById('txTable');
+    if (!data.transactions.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty-row">No transactions yet.</td></tr>'; return;
+    }
+    tbody.innerHTML = data.transactions.slice(0,50).map(t => `
+      <tr>
+        <td class="mono-text">${t.id}</td>
+        <td>${t.date}</td>
+        <td>${t.description}</td>
+        <td><span class="cat-badge">${t.category}</span></td>
+        <td class="amount-cell">₹${parseFloat(t.amount).toFixed(2)}</td>
+      </tr>`).join('');
+  }
+
+  loadTransactions();
+</script>
+{% endblock %}
